@@ -1,0 +1,35 @@
+# macOS
+.DS_Store
+
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcscmblueprint
+*.xccheckout
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.swiftpm/
+.build/
+Package.resolved
+
+# Node / Cloudflare Worker (plaid-backend)
+node_modules/
+.wrangler/
+dist/
+
+# Secrets — NEVER commit these
+.dev.vars
+.env
+*.env
+*.local
+
+# Logs
+*.log
+npm-debug.log*
