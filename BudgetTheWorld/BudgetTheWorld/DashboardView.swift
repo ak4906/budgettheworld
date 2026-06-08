@@ -28,6 +28,8 @@ struct DashboardView: View {
     @State private var showEssentials = false
     @State private var showMoveToFund = false
     @State private var freeForFund: Double = 0
+    @AppStorage("pacingBasis") private var pacingBasisRaw = "day"
+    @AppStorage("pacingSavingsEarmark") private var pacingEarmark = 0.0
 
     private var settings: AppSettings? { settingsList.first }
     private var rent: RentObligation? { rents.first }
@@ -39,6 +41,10 @@ struct DashboardView: View {
         nonmutating set { horizonCode = newValue.code }
     }
     private var essentialSet: Set<String> { Set(essentialCodes.split(separator: ",").map(String.init)) }
+    private var pacingBasis: PacingBasis { PacingBasis(rawValue: pacingBasisRaw) ?? .day }
+    private var pacingBasisBinding: Binding<PacingBasis> {
+        Binding(get: { pacingBasis }, set: { pacingBasisRaw = $0.rawValue })
+    }
 
     var body: some View {
         NavigationStack {
@@ -48,6 +54,7 @@ struct DashboardView: View {
                         horizonPicker
                         heroRing(settings)
                         leftToSpendCard(settings)
+                        pacingCard(settings)
                         paycheckCard(settings)
                         rentCard(settings)
                         if !cards.isEmpty { creditCardsCard(settings) }
@@ -61,9 +68,13 @@ struct DashboardView: View {
             }
             .background(Color.btwBackground)
             .navigationTitle("BudgetTheWorld")
+            .keyboardDoneButton()
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     NavigationLink { OverviewView() } label: { Image(systemName: "square.grid.2x2.fill") }
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    NavigationLink { BalanceHistoryView() } label: { Image(systemName: "chart.bar.xaxis") }
                 }
                 ToolbarItem(placement: .primaryAction) {
                     NavigationLink { ForecastView() } label: { Image(systemName: "chart.xyaxis.line") }
@@ -209,13 +220,13 @@ struct DashboardView: View {
                 ForEach(RateBasis.allCases) { Text($0.label).tag($0) }
             }
             .pickerStyle(.segmented)
-            Text("\(rate.formatted(.currency(code: "USD")))\(rateBasis.suffix) for fun through \(end.formatted(.dateTime.month().day())) — after this, only essentials are covered.")
+            Text("\(rate.formatted(.currency(code: "USD")))\(rateBasis.suffix) for fun through \(end.formatted(.dateTime.month().day())) — after this, only committed bills (essentials + recurring) are covered.")
                 .font(.caption)
                 .foregroundStyle(free < 0 ? .red : .secondary)
             HStack {
                 breakdownStat("In", bd.inflowTotal)
                 Divider().frame(height: 28)
-                breakdownStat("Essentials", bd.essentialOutflowTotal)
+                breakdownStat("Committed", bd.committedOutflowTotal)
                 Divider().frame(height: 28)
                 breakdownStat("Free", free)
             }
@@ -239,6 +250,51 @@ struct DashboardView: View {
             }
             .font(.caption)
             .tint(.blue)
+        }
+    }
+
+    // MARK: Pace (can I spend today?)
+
+    private func pacingCard(_ settings: AppSettings) -> some View {
+        let bd = breakdown(settings)
+        let pool = max(bd.freeToSpend - pacingEarmark, 0)
+        let end = horizon.endDate(settings: settings)
+        let daysLeft = max(BudgetMath.daysUntil(end), 1)
+        let perDay = pool / Double(daysLeft)
+        let basis = pacingBasis
+        let allowance = perDay * basis.perDayMultiple
+        let cal = Calendar.current
+        let spent = PacingLogic.discretionarySpent(entries: ledger, essentialCodes: essentialSet, interval: basis.currentInterval(cal))
+        let remaining = allowance - spent
+        let yStart = cal.date(byAdding: .day, value: -1, to: cal.startOfDay(for: .now)) ?? .now
+        let yInterval = DateInterval(start: yStart, end: cal.startOfDay(for: .now))
+        let ySpent = PacingLogic.discretionarySpent(entries: ledger, essentialCodes: essentialSet, interval: yInterval)
+        let yDelta = perDay - ySpent
+        return Card(title: "Pace · \(basis.label)", systemImage: "speedometer", tint: remaining >= 0 ? .green : .red) {
+            Picker("Basis", selection: pacingBasisBinding) {
+                ForEach(PacingBasis.allCases) { Text($0.label).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            Text(remaining >= 0
+                 ? "\(remaining, format: .currency(code: "USD")) left \(basis.unit)"
+                 : "Over by \(abs(remaining), format: .currency(code: "USD")) \(basis.unit)")
+                .font(.system(size: 26, weight: .bold, design: .rounded))
+                .foregroundStyle(remaining >= 0 ? Color.primary : Color.red)
+                .minimumScaleFactor(0.6).lineLimit(1)
+            Text("Spent \(spent, format: .currency(code: "USD")) of \(allowance, format: .currency(code: "USD")) \(basis.unit) — fun money (non-essentials) only.")
+                .font(.caption).foregroundStyle(.secondary)
+            if basis == .day {
+                Text(yDelta >= 0
+                     ? "You came in \(yDelta, format: .currency(code: "USD")) under yesterday — a little extra today. 🎉"
+                     : "You went \(abs(yDelta), format: .currency(code: "USD")) over yesterday — try trimming about that much today.")
+                    .font(.caption2).foregroundStyle(yDelta >= 0 ? .green : .orange)
+            }
+            LabeledContent("Set aside for savings") {
+                TextField("0", value: $pacingEarmark, format: .currency(code: "USD"))
+                    .keyboardType(.decimalPad)
+                    .multilineTextAlignment(.trailing)
+            }
+            .font(.caption)
         }
     }
 
@@ -351,23 +407,29 @@ struct DashboardView: View {
                 let days = BudgetMath.daysUntil(due)
                 let projByDue = projected(settings, by: due)
                 let covers = projByDue >= card.statementBalance
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack {
-                        Text(card.name).fontWeight(.medium)
-                        Spacer()
-                        Text(CardLogic.balance(for: card, entries: ledger), format: .currency(code: "USD")).fontWeight(.semibold)
-                    }
-                    Text("Statement \(card.statementBalance, format: .currency(code: "USD")) · min \(card.minimumPayment, format: .currency(code: "USD")) · due \(due.formatted(.dateTime.month().day())) (in \(days)d)")
-                        .font(.caption)
-                        .foregroundStyle(days <= 3 ? Color.red : Color.secondary)
-                    if card.statementBalance > 0 {
-                        Text(covers
-                             ? "On track to pay the statement by \(due.formatted(.dateTime.month().day()))"
-                             : "Statement may be short \((card.statementBalance - projByDue).formatted(.currency(code: "USD"))) by \(due.formatted(.dateTime.month().day()))")
-                            .font(.caption2)
-                            .foregroundStyle(covers ? .green : .orange)
+                NavigationLink {
+                    CardChargesView(card: card)
+                } label: {
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack {
+                            Text(card.name).fontWeight(.medium)
+                            Spacer()
+                            Text(CardLogic.balance(for: card, entries: ledger), format: .currency(code: "USD")).fontWeight(.semibold)
+                            Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+                        }
+                        Text("Statement \(card.statementBalance, format: .currency(code: "USD")) · min \(card.minimumPayment, format: .currency(code: "USD")) · due \(due.formatted(.dateTime.month().day())) (in \(days)d)")
+                            .font(.caption)
+                            .foregroundStyle(days <= 3 ? Color.red : Color.secondary)
+                        if card.statementBalance > 0 {
+                            Text(covers
+                                 ? "On track to pay the statement by \(due.formatted(.dateTime.month().day()))"
+                                 : "Statement may be short \((card.statementBalance - projByDue).formatted(.currency(code: "USD"))) by \(due.formatted(.dateTime.month().day()))")
+                                .font(.caption2)
+                                .foregroundStyle(covers ? .green : .orange)
+                        }
                     }
                 }
+                .buttonStyle(.plain)
                 .padding(.vertical, 2)
             }
         }
@@ -377,10 +439,11 @@ struct DashboardView: View {
 
     private func savingsCard(_ settings: AppSettings) -> some View {
         let balance = BalanceLogic.balance(asOf: .now, anchorAmount: settings.currentCashBalance, anchorDate: settings.balanceAnchorDate, entries: ledger)
+        let savings = settings.savingsBalance
         let funds = buckets.filter { $0.kind == .emergency || $0.kind == .medSchool || $0.kind == .apartment }
         let fundsTotal = funds.reduce(0) { $0 + $1.currentAmount }
         let retire = RetirementLogic.balance(settings: settings, workDays: workDays)
-        let net = balance + fundsTotal + retire - creditOwed
+        let net = balance + savings + fundsTotal + retire - creditOwed
         return Card(title: "Net Worth", systemImage: "chart.line.uptrend.xyaxis", tint: .purple) {
             Text(net, format: .currency(code: "USD"))
                 .font(.system(size: 30, weight: .bold, design: .rounded))
@@ -388,7 +451,7 @@ struct DashboardView: View {
             Text("Everything you have − what you owe (a snapshot now, not tied to the horizon).")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Text("\(balance, format: .currency(code: "USD")) balance + \(fundsTotal, format: .currency(code: "USD")) funds + \(retire, format: .currency(code: "USD")) 401(k) − \(creditOwed, format: .currency(code: "USD")) cards")
+            Text("\(balance, format: .currency(code: "USD")) checking + \(savings, format: .currency(code: "USD")) savings + \(fundsTotal, format: .currency(code: "USD")) funds + \(retire, format: .currency(code: "USD")) 401(k) − \(creditOwed, format: .currency(code: "USD")) cards")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
             if !funds.isEmpty {
@@ -512,6 +575,48 @@ private struct MoveToFundSheet: View {
         bucket.currentAmount += amount
         try? context.save()
         dismiss()
+    }
+}
+
+// MARK: - Credit-card drill-down (what's reducing Free to Spend via this card)
+
+private struct CardChargesView: View {
+    let card: CreditCard
+    @Query(sort: \LedgerEntry.date, order: .reverse) private var ledger: [LedgerEntry]
+
+    private var activity: [LedgerEntry] {
+        let lo = Calendar.current.startOfDay(for: card.balanceAnchorDate)
+        return ledger.filter { $0.cardName == card.name && Calendar.current.startOfDay(for: $0.date) >= lo }
+    }
+
+    var body: some View {
+        let owed = CardLogic.balance(for: card, entries: ledger)
+        List {
+            Section {
+                LabeledContent("Balance owed", value: owed.formatted(.currency(code: "USD"))).font(.headline)
+                Text("Charges since \(card.balanceAnchorDate.formatted(.dateTime.month().day().year())) — this is what's reducing your Free to Spend through this card.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Activity") {
+                if activity.isEmpty {
+                    Text("No charges on this card since the anchor date.").foregroundStyle(.secondary)
+                }
+                ForEach(activity) { e in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(e.rawDescription)
+                            Text("\(e.date.formatted(.dateTime.month().day()))\(e.isCardPayment ? " · payment" : "")\(e.subcategory.map { " · \($0)" } ?? "")")
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Text(e.amount, format: .currency(code: "USD"))
+                            .foregroundStyle(e.isCardPayment ? .green : .primary)
+                    }
+                }
+            }
+        }
+        .navigationTitle(card.name)
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 

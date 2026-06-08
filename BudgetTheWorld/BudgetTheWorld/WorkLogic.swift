@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import SwiftData
 
 enum WorkLogic {
 
@@ -50,5 +51,27 @@ enum WorkLogic {
             day = next
         }
         return result
+    }
+}
+
+extension WorkLogic {
+    /// True if a logged/synced deposit represents work pay (a paycheck), as opposed to a gift,
+    /// refund, transfer, cash-back, etc. Prefers the income "Source" label; falls back to the
+    /// bank description for unlabeled synced income.
+    static func isPaycheckDeposit(_ entry: LedgerEntry) -> Bool {
+        guard entry.amount > 0, entry.category == .income else { return false }
+        let src = (entry.subcategory ?? "").lowercased()
+        if !src.isEmpty {
+            return src.contains("paycheck") || src.contains("payroll") || src.contains("wage")
+                || src.contains("salary") || src.contains("bonus")
+        }
+        let d = entry.rawDescription.lowercased()
+        return d.contains("payroll") || d.contains("paycheck") || d.contains("direct dep")
+            || d.contains("dir dep") || d.contains("salary")
+    }
+
+    /// Most-recent real paycheck deposits (actual take-home), newest first.
+    static func recentPaychecks(from entries: [LedgerEntry], limit: Int = 8) -> [LedgerEntry] {
+        Array(entries.filter(isPaycheckDeposit).sorted { $0.date > $1.date }.prefix(limit))
     }
 }

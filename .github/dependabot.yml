@@ -1,0 +1,13 @@
+version: 2
+updates:
+  # Cloudflare Worker backend dependencies
+  - package-ecosystem: "npm"
+    directory: "/plaid-backend"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+  # GitHub Actions (if/when workflows are added)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

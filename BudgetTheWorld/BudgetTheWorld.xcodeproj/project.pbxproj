@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		2E960D2C2FD3DE5B0046237B /* LinkKit in Frameworks */ = {isa = PBXBuildFile; productRef = 2E960D2B2FD3DE5B0046237B /* LinkKit */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		2E0EB7D42FD0EB80007B6641 /* BudgetTheWorld.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BudgetTheWorld.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -23,6 +27,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2E960D2C2FD3DE5B0046237B /* LinkKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -65,6 +70,7 @@
 			);
 			name = BudgetTheWorld;
 			packageProductDependencies = (
+				2E960D2B2FD3DE5B0046237B /* LinkKit */,
 			);
 			productName = BudgetTheWorld;
 			productReference = 2E0EB7D42FD0EB80007B6641 /* BudgetTheWorld.app */;
@@ -94,6 +100,9 @@
 			);
 			mainGroup = 2E0EB7CB2FD0EB80007B6641;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				2E960D2A2FD3DE5B0046237B /* XCRemoteSwiftPackageReference "plaid-link-ios" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 2E0EB7D52FD0EB80007B6641 /* Products */;
 			projectDirPath = "";
@@ -251,12 +260,14 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = BudgetTheWorld/BudgetTheWorld.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = SELN5644JH;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "Secures your finances with Face ID so only you can see them.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -284,12 +295,14 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = BudgetTheWorld/BudgetTheWorld.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = SELN5644JH;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "Secures your finances with Face ID so only you can see them.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -334,6 +347,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		2E960D2A2FD3DE5B0046237B /* XCRemoteSwiftPackageReference "plaid-link-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/plaid/plaid-link-ios";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 6.4.7;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		2E960D2B2FD3DE5B0046237B /* LinkKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2E960D2A2FD3DE5B0046237B /* XCRemoteSwiftPackageReference "plaid-link-ios" */;
+			productName = LinkKit;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 2E0EB7CC2FD0EB80007B6641 /* Project object */;
 }

@@ -114,6 +114,7 @@ struct ForecastView: View {
 
                     scenariosSection
                     summary
+                    trendCard
                     whenCard
 
                     Text(netMode
@@ -234,6 +235,11 @@ struct ForecastView: View {
                     .lineStyle(StrokeStyle(lineWidth: 2, dash: [5, 3]))
                     .interpolationMethod(.monotone)
             }
+            ForEach(trendLine) { p in
+                LineMark(x: .value("Date", p.date), y: .value("Balance", p.balance), series: .value("Line", "Trend"))
+                    .foregroundStyle(.gray.opacity(0.7))
+                    .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [2, 3]))
+            }
             ForEach(events) { ev in
                 RuleMark(x: .value("Event", ev.date))
                     .foregroundStyle(eventColor(ev.kind).opacity(0.30))
@@ -271,6 +277,7 @@ struct ForecastView: View {
             legendDot(.green, "Payday")
             legendDot(.orange, "Rent")
             legendDot(.red, "Card due")
+            legendDot(.gray, "Trend")
             Spacer()
             Text("Pinch to zoom · keeps $0").foregroundStyle(.tertiary)
         }
@@ -369,6 +376,79 @@ struct ForecastView: View {
                     .font(.caption).foregroundStyle(.green)
             }
         }
+    }
+
+    // MARK: Trend & earn rate (#22)
+
+    private func regression(_ pts: [Point]) -> (slopePerDay: Double, intercept: Double)? {
+        guard pts.count >= 2, let first = pts.first else { return nil }
+        let xs = pts.map { $0.date.timeIntervalSince(first.date) / 86_400 }
+        let ys = pts.map(\.balance)
+        let n = Double(pts.count)
+        let sumX = xs.reduce(0, +)
+        let sumY = ys.reduce(0, +)
+        let sumXY = zip(xs, ys).reduce(0) { $0 + $1.0 * $1.1 }
+        let sumXX = xs.reduce(0) { $0 + $1 * $1 }
+        let denom = n * sumXX - sumX * sumX
+        guard denom != 0 else { return nil }
+        let slope = (n * sumXY - sumX * sumY) / denom
+        let intercept = (sumY - slope * sumX) / n
+        return (slope, intercept)
+    }
+
+    /// A straight regression line across the visible window — the dashed gray "trend".
+    private var trendLine: [Point] {
+        let vis = visiblePoints
+        guard let reg = regression(vis), let first = vis.first, let last = vis.last, last.date > first.date else { return [] }
+        let lastDays = last.date.timeIntervalSince(first.date) / 86_400
+        return [
+            Point(date: first.date, balance: reg.intercept),
+            Point(date: last.date, balance: reg.intercept + reg.slopePerDay * lastDays)
+        ]
+    }
+
+    private var trendCard: some View {
+        let vis = visiblePoints
+        let perDay = regression(vis)?.slopePerDay ?? 0
+        let perWeek = perDay * 7
+        let perMonth = perDay * 30.4
+        let up = perDay >= 0
+        return Card(title: "Trend & earn rate", systemImage: up ? "arrow.up.right.circle.fill" : "arrow.down.right.circle.fill", tint: up ? .green : .red) {
+            HStack {
+                stat("Per week", perWeek)
+                Divider().frame(height: 30)
+                stat("Per month", perMonth)
+            }
+            ForEach(forecastTips(vis: vis, perDay: perDay), id: \.self) { tip in
+                Label(tip, systemImage: "lightbulb.fill")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            Text("Trend = the dashed straight line: your average direction over the visible window, smoothing out payday spikes.")
+                .font(.caption2).foregroundStyle(.tertiary)
+        }
+    }
+
+    private func forecastTips(vis: [Point], perDay: Double) -> [String] {
+        var out: [String] = []
+        guard let lowest = vis.min(by: { $0.balance < $1.balance }) else { return out }
+        let perWeek = perDay * 7
+        let cal = Calendar.current
+        let firstNeg = vis.first { $0.balance < 0 }
+        if let firstNeg, lowest.balance < 0 {
+            let daysToLow = max(cal.dateComponents([.day], from: cal.startOfDay(for: .now), to: lowest.date).day ?? 1, 1)
+            let perDayCut = (-lowest.balance) / Double(daysToLow)
+            out.append("Dips below $0 around \(firstNeg.date.formatted(.dateTime.month().day())). Trimming ~\(perDayCut.formatted(.currency(code: "USD")))/day (or adding income) keeps you above water.")
+        } else if perWeek < 0 {
+            out.append("Spending outpaces income by ~\(abs(perWeek).formatted(.currency(code: "USD")))/week here — positive for now, but trending down.")
+        } else if perWeek > 0 {
+            out.append("You're netting ~\(perWeek.formatted(.currency(code: "USD")))/week. Move some to savings or a goal so it doesn't quietly get spent.")
+        }
+        if firstNeg == nil {
+            out.append("Lowest you'll dip to in view: \(lowest.balance.formatted(.currency(code: "USD"))) on \(lowest.date.formatted(.dateTime.month().day())).")
+        }
+        return out
     }
 
     // MARK: When will I have $X?

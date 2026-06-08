@@ -56,6 +56,51 @@ enum TxnDetailCatalog {
         }
     }
 
+    /// A best-guess subcategory inferred from the transaction name (keyword match), if any.
+    /// Used to put the most-likely chip first when quick-labeling.
+    static func subcategoryHint(for category: SpendCategory, name: String) -> String? {
+        let n = name.lowercased()
+        func has(_ words: [String]) -> Bool { words.contains { n.contains($0) } }
+        switch category {
+        case .food:
+            if has(["starbucks", "dunkin", "coffee", "cafe", "café", "blue bottle"]) { return "Coffee/Tea" }
+            if has(["boba", "bubble tea", "kung fu tea", "gong cha"]) { return "Boba" }
+            if has(["doordash", "uber eats", "grubhub", "seamless", "delivery"]) { return "Delivery" }
+            if has(["mcdonald", "chipotle", "burger", "kfc", "taco bell", "wendy", "popeyes", "subway"]) { return "Fast food" }
+            if has(["ramen", "restaurant", "grill", "kitchen", "bistro", "sushi", "pizz", "thai", "diner"]) { return "Restaurant" }
+            return nil
+        case .groceries:
+            if has(["trader joe", "whole foods", "h mart", "key food", "market", "grocery", "costco", "aldi", "safeway", "kroger"]) { return "Pantry" }
+            return nil
+        case .transportation:
+            if has(["mta", "nyct", "subway", "metrocard", "omny"]) { return "Subway" }
+            if has(["uber", "lyft"]) { return "Rideshare" }
+            if has(["amtrak"]) { return "Amtrak" }
+            if has(["metro-north", "metro north", "lirr"]) { return "Train" }
+            if has(["shell", "exxon", "chevron", "gas", "fuel"]) { return "Gas" }
+            return nil
+        case .subscriptions:
+            if has(["netflix"]) { return "Netflix" }
+            if has(["spotify"]) { return "Spotify" }
+            if has(["hulu"]) { return "Hulu" }
+            if has(["disney"]) { return "Disney+" }
+            if has(["youtube"]) { return "YouTube" }
+            if has(["icloud", "apple.com/bill"]) { return "iCloud" }
+            if has(["gym", "fitness", "planet"]) { return "Gym" }
+            return nil
+        case .healthcare:
+            if has(["pharmacy", "cvs", "walgreens", "duane reade", "rite aid"]) { return "Pharmacy" }
+            return nil
+        default:
+            return nil
+        }
+    }
+
+    /// Suggested income sources (used when a transaction is marked as income).
+    static let incomeSources: [String] = [
+        "Paycheck", "Bonus", "Cash back", "Gift", "Government benefit", "Tax refund", "Transfer", "Reimbursement", "Interest", "Other"
+    ]
+
     /// Common stores/locations to suggest; the UI merges these with the user's own history.
     static let defaultMerchants: [String] = [
         "Target", "Walmart", "Amazon", "Costco",

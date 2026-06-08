@@ -12,11 +12,17 @@ import SwiftData
 struct BucketsView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \Bucket.sortIndex) private var buckets: [Bucket]
+    @Query private var settingsList: [AppSettings]
+    @AppStorage("includeSavingsInBuckets") private var includeSavings = true
 
     @State private var editing: Bucket?
     @State private var creatingNew = false
 
-    private var totalSaved: Double { buckets.reduce(0) { $0 + $1.currentAmount } }
+    private var savingsContribution: Double {
+        guard includeSavings, let s = settingsList.first else { return 0 }
+        return s.savingsBalance
+    }
+    private var totalSaved: Double { buckets.reduce(0) { $0 + $1.currentAmount } + savingsContribution }
     private var totalTarget: Double { buckets.reduce(0) { $0 + $1.targetAmount } }
 
     var body: some View {
@@ -24,6 +30,7 @@ struct BucketsView: View {
             ScrollView {
                 VStack(spacing: 16) {
                     totalCard
+                    savingsCard
                     ForEach(buckets) { bucket in
                         bucketCard(bucket)
                     }
@@ -54,9 +61,27 @@ struct BucketsView: View {
         Card(title: "Total Saved", systemImage: "building.columns.fill", tint: .green) {
             Text(totalSaved, format: .currency(code: "USD"))
                 .font(.system(size: 36, weight: .bold, design: .rounded))
-            Text("across \(buckets.count) fund\(buckets.count == 1 ? "" : "s") · goal \(totalTarget, format: .currency(code: "USD"))")
+            Text("across \(buckets.count) fund\(buckets.count == 1 ? "" : "s")\(savingsContribution > 0 ? " + savings" : "") · goal \(totalTarget, format: .currency(code: "USD"))")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private var savingsCard: some View {
+        if let s = settingsList.first, s.savingsBalance > 0 {
+            Card(title: "Savings Account", systemImage: "banknote.fill", tint: .mint) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(s.savingsBalance, format: .currency(code: "USD"))
+                        .font(.title2.weight(.bold))
+                    Spacer()
+                    Text("synced").font(.caption).foregroundStyle(.secondary)
+                }
+                Toggle("Count toward total saved", isOn: $includeSavings)
+                    .font(.subheadline)
+                Text("Your bank savings balance, updated on each sync.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         }
     }
 

@@ -14,6 +14,9 @@ struct ContentView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("appLockEnabled") private var appLockEnabled = false
+    @AppStorage("bankSyncBaseURL") private var bankBaseURL = ""
+    @AppStorage("bankSyncSecret") private var bankSecret = ""
+    @AppStorage("bankSyncLastSyncAt") private var lastSyncAt: Double = 0
 
     @State private var unlocked = false
     @State private var authenticating = false
@@ -24,6 +27,7 @@ struct ContentView: View {
                 .task {
                     BudgetSeed.seedIfNeeded(context)
                     RecurringMaterializer.catchUp(context: context)
+                    autoSyncIfDue()
                     try? await Task.sleep(for: .milliseconds(300))
                     KeyboardSupport.shared.installTapToDismiss()
                     KeyboardSupport.shared.prewarm()
@@ -42,6 +46,7 @@ struct ContentView: View {
                 if appLockEnabled { unlocked = false }   // re-lock when leaving the app
             case .active:
                 if appLockEnabled && !unlocked { authenticate() }
+                autoSyncIfDue()
             default:
                 break
             }
@@ -50,6 +55,20 @@ struct ContentView: View {
             // Turning the lock off unlocks now; turning it on takes effect on next background/launch.
             if !enabled { unlocked = true }
         }
+        .onOpenURL { url in
+            PlaidLinkPresenter.shared.resume(from: url)   // resume Plaid Link after an OAuth redirect
+        }
+    }
+
+    /// Pull new transactions automatically when the app opens / returns to foreground, so the
+    /// user never has to remember to press Sync. Throttled to at most once every 6 hours.
+    private func autoSyncIfDue() {
+        guard !bankBaseURL.isEmpty, !bankSecret.isEmpty else { return }   // no bank connected
+        let now = Date().timeIntervalSince1970
+        guard now - lastSyncAt > 6 * 3600 else { return }
+        lastSyncAt = now
+        let url = bankBaseURL, secret = bankSecret, ctx = context
+        Task { _ = try? await PlaidSyncService.sync(baseURL: url, appSecret: secret, context: ctx) }
     }
 
     private func authenticate() {

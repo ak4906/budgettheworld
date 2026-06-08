@@ -80,6 +80,9 @@ private struct EditDebtSheet: View {
     @State private var hasDueDate: Bool
     @State private var dueDate: Date
     @State private var note: String
+    @State private var payInterval: RecurringCadence = .monthly
+    @State private var regularPayment: Double = 0
+    @State private var payoffTarget: Date = Calendar.current.date(byAdding: .month, value: 6, to: .now) ?? .now
 
     init(debt: PersonalDebt?) {
         self.debt = debt
@@ -116,6 +119,35 @@ private struct EditDebtSheet: View {
                 Section {
                     TextField("Note", text: $note, axis: .vertical)
                 }
+                if amount > 0 {
+                    Section {
+                        Picker("Every", selection: $payInterval) {
+                            Text("Week").tag(RecurringCadence.weekly)
+                            Text("2 weeks").tag(RecurringCadence.biweekly)
+                            Text("Month").tag(RecurringCadence.monthly)
+                        }
+                        LabeledContent("If I pay") {
+                            TextField("0.00", value: $regularPayment, format: .currency(code: "USD"))
+                                .keyboardType(.decimalPad)
+                                .multilineTextAlignment(.trailing)
+                        }
+                        if regularPayment > 0 {
+                            let n = Int(ceil(amount / regularPayment))
+                            let days = Int((Double(n) * intervalDays(payInterval)).rounded())
+                            let date = Calendar.current.date(byAdding: .day, value: days, to: .now) ?? .now
+                            Text("→ paid off in \(n) payment\(n == 1 ? "" : "s"), by \(date.formatted(.dateTime.month().day().year())).")
+                                .font(.caption).foregroundStyle(.green)
+                        }
+                        DatePicker("Pay off by", selection: $payoffTarget, in: Date.now..., displayedComponents: .date)
+                        let intervals = max(Double(BudgetMath.daysUntil(payoffTarget)) / intervalDays(payInterval), 1)
+                        Text("→ pay about \(amount / intervals, format: .currency(code: "USD")) per \(intervalLabel(payInterval)) to clear it by then.")
+                            .font(.caption).foregroundStyle(.blue)
+                    } header: {
+                        Text("Payoff calculator")
+                    } footer: {
+                        Text("Simple no-interest estimate based on the amount above.")
+                    }
+                }
                 if debt != nil {
                     Section {
                         Button("Delete", role: .destructive) { delete() }
@@ -131,6 +163,23 @@ private struct EditDebtSheet: View {
                     Button("Save") { save() }.disabled(lender.isEmpty || amount <= 0)
                 }
             }
+        }
+    }
+
+    private func intervalDays(_ c: RecurringCadence) -> Double {
+        switch c {
+        case .daily: 1
+        case .weekly: 7
+        case .biweekly: 14
+        case .monthly: 30.4
+        }
+    }
+    private func intervalLabel(_ c: RecurringCadence) -> String {
+        switch c {
+        case .daily: "day"
+        case .weekly: "week"
+        case .biweekly: "2 weeks"
+        case .monthly: "month"
         }
     }
 

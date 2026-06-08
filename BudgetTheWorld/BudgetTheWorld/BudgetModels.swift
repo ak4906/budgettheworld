@@ -173,6 +173,47 @@ enum TxnPurpose: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+/// Optional meal tag for Food & Drink purchases.
+enum MealType: String, Codable, CaseIterable, Identifiable {
+    case breakfast, brunch, lunch, dinner, snack, other
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .breakfast: "Breakfast"
+        case .brunch: "Brunch"
+        case .lunch: "Lunch"
+        case .dinner: "Dinner"
+        case .snack: "Snack"
+        case .other: "Other"
+        }
+    }
+}
+
+/// One item on a receipt (apples, milk, tax…), stored as a Codable blob on a LedgerEntry.
+struct LineItemDTO: Codable, Identifiable, Hashable {
+    var id = UUID()
+    var name: String = ""
+    var amount: Double = 0
+    var quantity: Double = 1
+    var unitPrice: Double { quantity > 0 ? amount / quantity : amount }
+}
+
+/// One dated credit-score reading, for the history graph.
+@Model
+final class CreditScoreEntry {
+    var date: Date = Date.now
+    var fico: Int = 0
+    var vantage: Int = 0
+    var note: String?
+
+    init(date: Date = Date.now, fico: Int = 0, vantage: Int = 0, note: String? = nil) {
+        self.date = date
+        self.fico = fico
+        self.vantage = vantage
+        self.note = note
+    }
+}
+
 // MARK: - Models
 
 @Model
@@ -195,6 +236,8 @@ final class AppSettings {
     var employmentStartDate: Date = Date.distantPast  // no pre-hire restriction until you set it
     var employmentEndDate: Date = Date.distantFuture
     var balanceAnchorDate: Date = Date.now            // currentCashBalance is the balance "as of" this date (M9)
+    var savingsBalance: Double = 0                     // synced savings-account balance (multi-account)
+    var savingsAnchorDate: Date = Date.now
 
     // Retirement / 401(k) (M11)
     var retirementPercent: Double = 0                 // fraction of gross contributed (e.g. 0.05 = 5%)
@@ -225,6 +268,8 @@ final class AppSettings {
         employmentStartDate: Date = .distantPast,
         employmentEndDate: Date = .distantFuture,
         balanceAnchorDate: Date = .now,
+        savingsBalance: Double = 0,
+        savingsAnchorDate: Date = .now,
         retirementPercent: Double = 0,
         retirementBalance: Double = 0,
         retirementAnchorDate: Date = .now,
@@ -252,6 +297,8 @@ final class AppSettings {
         self.employmentStartDate = employmentStartDate
         self.employmentEndDate = employmentEndDate
         self.balanceAnchorDate = balanceAnchorDate
+        self.savingsBalance = savingsBalance
+        self.savingsAnchorDate = savingsAnchorDate
         self.retirementPercent = retirementPercent
         self.retirementBalance = retirementBalance
         self.retirementAnchorDate = retirementAnchorDate
@@ -348,9 +395,15 @@ final class LedgerEntry {
     var cardName: String?              // nil = paid from checking; set = charged to this card
     var isCardPayment: Bool = false    // true = a payment toward a card (money leaves checking)
     var subcategory: String?           // optional free-text detail (e.g. "Boba", "Streaming", "Renter's")
-    var merchant: String?              // optional store/location (e.g. "Trader Joe's", "CVS")
+    var merchant: String?              // optional store/location (e.g. "Trader Joe's", "Jin Ramen")
+    var area: String?                  // optional broader location (e.g. "Hamilton Heights")
+    var lineItemsData: Data?           // optional itemized receipt, encoded [LineItemDTO]
     var purpose: TxnPurpose?           // optional tag (date / gift / self …); optional so it migrates safely
     var plaidID: String?               // Plaid transaction_id for bank-synced rows (dedup/upsert); nil for manual
+    var accountID: String?             // Plaid account_id the synced transaction belongs to
+    var accountName: String?           // denormalized account label for display (e.g. "Checking", "BofA Credit")
+    var essential: Bool?               // per-transaction need/want override (nil = use the category default)
+    var mealType: MealType?            // optional meal tag for Food & Drink (breakfast/lunch/…)
 
     init(
         date: Date,
@@ -363,8 +416,13 @@ final class LedgerEntry {
         isCardPayment: Bool = false,
         subcategory: String? = nil,
         merchant: String? = nil,
+        area: String? = nil,
         purpose: TxnPurpose? = nil,
-        plaidID: String? = nil
+        plaidID: String? = nil,
+        accountID: String? = nil,
+        accountName: String? = nil,
+        essential: Bool? = nil,
+        mealType: MealType? = nil
     ) {
         self.date = date
         self.amount = amount
@@ -376,8 +434,19 @@ final class LedgerEntry {
         self.isCardPayment = isCardPayment
         self.subcategory = subcategory
         self.merchant = merchant
+        self.area = area
         self.purpose = purpose
         self.plaidID = plaidID
+        self.accountID = accountID
+        self.accountName = accountName
+        self.essential = essential
+        self.mealType = mealType
+    }
+
+    /// Itemized receipt lines, decoded from `lineItemsData` (a computed accessor, not persisted directly).
+    var lineItems: [LineItemDTO] {
+        get { (lineItemsData.flatMap { try? JSONDecoder().decode([LineItemDTO].self, from: $0) }) ?? [] }
+        set { lineItemsData = newValue.isEmpty ? nil : (try? JSONEncoder().encode(newValue)) }
     }
 
     var isExpense: Bool { amount < 0 }
@@ -424,8 +493,9 @@ final class CreditCard {
     var statementDueDate: Date = Date.now   // when the CURRENT balance is due (recurs monthly)
     var balanceAnchorDate: Date = Date.now  // currentBalance is the balance "as of" this date; charges/payments move it
     var note: String?
+    var plaidAccountID: String?             // Plaid account_id this card maps to (for sync matching)
 
-    init(name: String, currentBalance: Double = 0, statementBalance: Double = 0, minimumPayment: Double = 0, dueDayOfMonth: Int = 1, statementDueDate: Date = .now, balanceAnchorDate: Date = .now, note: String? = nil) {
+    init(name: String, currentBalance: Double = 0, statementBalance: Double = 0, minimumPayment: Double = 0, dueDayOfMonth: Int = 1, statementDueDate: Date = .now, balanceAnchorDate: Date = .now, note: String? = nil, plaidAccountID: String? = nil) {
         self.name = name
         self.currentBalance = currentBalance
         self.statementBalance = statementBalance
@@ -434,6 +504,7 @@ final class CreditCard {
         self.statementDueDate = statementDueDate
         self.balanceAnchorDate = balanceAnchorDate
         self.note = note
+        self.plaidAccountID = plaidAccountID
     }
 
     /// The current balance's due date, rolled forward monthly until it's today or later.
@@ -476,6 +547,7 @@ final class RecurringTransaction {
     var isActive: Bool
     var cardName: String?         // nil = paid from checking; set = charged to this card
     var lastMaterializedDate: Date = Date.distantPast   // last day we created real LedgerEntry rows for this series
+    var skippedDatesRaw: String = ""    // comma-separated "y-m-d" occurrence dates the user skipped (per-instance override)
 
     init(amount: Double, detail: String, category: SpendCategory = .other, cadence: RecurringCadence = .monthly, startDate: Date = .now, endDate: Date = .distantFuture, isActive: Bool = true, cardName: String? = nil, lastMaterializedDate: Date = .distantPast) {
         self.amount = amount
@@ -520,5 +592,27 @@ final class PersonalDebt {
         self.dueDate = dueDate
         self.note = note
         self.countInNetWorth = countInNetWorth
+    }
+}
+
+/// A saved labeling rule: synced transactions whose description matches get these labels applied
+/// automatically on every sync (created from "All + future" in the transaction editor).
+@Model
+final class LabelRule {
+    var match: String              // matches LedgerEntry.rawDescription (case-insensitive)
+    var category: SpendCategory
+    var subcategory: String?
+    var merchant: String?
+    var purpose: TxnPurpose?
+
+    var amount: Double?            // when set, rule only applies to txns with this amount (e.g. a fare vs a different charge at the same merchant)
+
+    init(match: String, category: SpendCategory, subcategory: String? = nil, merchant: String? = nil, purpose: TxnPurpose? = nil, amount: Double? = nil) {
+        self.match = match
+        self.category = category
+        self.subcategory = subcategory
+        self.merchant = merchant
+        self.purpose = purpose
+        self.amount = amount
     }
 }

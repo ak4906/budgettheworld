@@ -128,7 +128,7 @@ enum ProjectionEngine {
         var d = calendar.startOfDay(for: r.startDate)
         var guardCount = 0
         while d <= endDay && guardCount < 4000 {
-            if d > afterDay { count += 1 }
+            if d > afterDay && !isSkipped(r, on: d, calendar: calendar) { count += 1 }
             guard let next = step(d, cadence: r.cadence, calendar: calendar), next > d else { break }
             d = next
             guardCount += 1
@@ -218,7 +218,7 @@ enum ProjectionEngine {
         for r in recurrings where r.cardName == nil {   // card-charged recurring shows up via the card balance, below
             let c = occurrences(of: r, after: today, through: end, calendar: calendar)
             guard c > 0 else { continue }
-            let line = ProjectionLine(label: r.detail, amount: r.amount, count: c, isEssential: essentialCategories.contains(r.category.rawValue))
+            let line = ProjectionLine(label: r.detail, amount: r.amount, count: c, isEssential: essentialCategories.contains(r.category.rawValue), isRecurring: true)
             if r.amount >= 0 { b.inflows.append(line) } else { b.outflows.append(line) }
         }
 
@@ -255,12 +255,42 @@ enum ProjectionEngine {
         let start = calendar.startOfDay(for: r.startDate)
         let end = calendar.startOfDay(for: r.endDate)
         guard d >= start, d <= end else { return false }
+        if isSkipped(r, on: d, calendar: calendar) { return false }
         switch r.cadence {
         case .daily: return true
         case .weekly: return ((calendar.dateComponents([.day], from: start, to: d).day ?? 0) % 7) == 0
         case .biweekly: return ((calendar.dateComponents([.day], from: start, to: d).day ?? 0) % 14) == 0
         case .monthly: return calendar.component(.day, from: d) == calendar.component(.day, from: start)
         }
+    }
+
+    /// Per-instance skip key for a given day ("year-month-day").
+    static func skipKey(_ date: Date, calendar: Calendar = .current) -> String {
+        let c = calendar.dateComponents([.year, .month, .day], from: date)
+        return "\(c.year ?? 0)-\(c.month ?? 0)-\(c.day ?? 0)"
+    }
+
+    /// Whether the user has skipped this specific occurrence date.
+    static func isSkipped(_ r: RecurringTransaction, on day: Date, calendar: Calendar = .current) -> Bool {
+        guard !r.skippedDatesRaw.isEmpty else { return false }
+        let key = skipKey(day, calendar: calendar)
+        return r.skippedDatesRaw.split(separator: ",").contains { $0 == Substring(key) }
+    }
+
+    /// Upcoming occurrence dates for a (possibly unsaved) series — for the per-instance skip UI.
+    static func upcomingOccurrenceDates(start: Date, cadence: RecurringCadence, end: Date, from: Date = .now, limit: Int = 8, calendar: Calendar = .current) -> [Date] {
+        var result: [Date] = []
+        let fromDay = calendar.startOfDay(for: from)
+        let endDay = calendar.startOfDay(for: end)
+        var d = calendar.startOfDay(for: start)
+        var guardCount = 0
+        while result.count < limit && d <= endDay && guardCount < 4000 {
+            if d >= fromDay { result.append(d) }
+            guard let next = step(d, cadence: cadence, calendar: calendar), next > d else { break }
+            d = next
+            guardCount += 1
+        }
+        return result
     }
 
     /// Day-by-day checking-balance simulation including EVERY known flow:
@@ -443,6 +473,7 @@ struct ProjectionLine: Identifiable {
     let amount: Double      // signed, per occurrence
     let count: Int
     var isEssential: Bool = true
+    var isRecurring: Bool = false
     var total: Double { amount * Double(count) }
 }
 
@@ -452,7 +483,9 @@ struct HorizonBreakdown {
     var inflowTotal: Double { inflows.reduce(0) { $0 + $1.total } }
     var outflowTotal: Double { outflows.reduce(0) { $0 + $1.total } }   // <= 0
     var essentialOutflowTotal: Double { outflows.filter { $0.isEssential }.reduce(0) { $0 + $1.total } }
+    /// Outflows you're already committed to within the horizon: essentials + ALL recurring + cards/rent.
+    var committedOutflowTotal: Double { outflows.filter { $0.isEssential || $0.isRecurring }.reduce(0) { $0 + $1.total } }
     var safe: Double { inflowTotal + outflowTotal }
-    /// What's left for non-essentials ("fun") after covering essentials through the horizon.
-    var freeToSpend: Double { inflowTotal + essentialOutflowTotal }
+    /// What's left for non-essentials ("fun") after covering committed bills through the horizon.
+    var freeToSpend: Double { inflowTotal + committedOutflowTotal }
 }

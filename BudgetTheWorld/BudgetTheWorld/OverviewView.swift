@@ -21,7 +21,6 @@ struct OverviewView: View {
     @Query(sort: \Bucket.sortIndex) private var buckets: [Bucket]
     @Query private var debts: [PersonalDebt]
 
-    @State private var showCreditEditor = false
     @State private var showInformal = false
 
     private let cols = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
@@ -63,7 +62,6 @@ struct OverviewView: View {
         }
         .background(Color.btwBackground)
         .navigationTitle("Overview")
-        .sheet(isPresented: $showCreditEditor) { CreditScoreEditor() }
         .sheet(isPresented: $showInformal) { InformalDebtsSheet() }
     }
 
@@ -108,7 +106,9 @@ struct OverviewView: View {
             value = "—"
             sub = "Tap to add"
         }
-        return Button { showCreditEditor = true } label: {
+        return NavigationLink {
+            CreditScoreView()
+        } label: {
             tile("Credit Score", "gauge.medium", .blue, value, sub)
         }
         .buttonStyle(.plain)
@@ -137,70 +137,6 @@ struct OverviewView: View {
     private func savingsColor(_ r: Double) -> Color { r >= 0.2 ? .green : (r >= 0 ? .orange : .red) }
     private func savingsLabel(_ r: Double) -> String {
         r >= 0.2 ? "great — 20%+ goal" : (r >= 0 ? "building toward 20%" : "spending over income")
-    }
-}
-
-// MARK: - Credit score editor
-
-private struct CreditScoreEditor: View {
-    @Query private var settingsList: [AppSettings]
-    @Environment(\.modelContext) private var context
-    @Environment(\.dismiss) private var dismiss
-
-    @State private var fico: Int = 0
-    @State private var vantage: Int = 0
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("FICO Score") {
-                    LabeledContent("Score") {
-                        TextField("e.g. 720", value: $fico, format: .number)
-                            .keyboardType(.numberPad)
-                            .multilineTextAlignment(.trailing)
-                    }
-                    if fico > 0 {
-                        Text(OverviewLogic.creditBand(fico)).font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                Section {
-                    LabeledContent("Score") {
-                        TextField("e.g. 735", value: $vantage, format: .number)
-                            .keyboardType(.numberPad)
-                            .multilineTextAlignment(.trailing)
-                    }
-                    if vantage > 0 {
-                        Text(OverviewLogic.creditBand(vantage)).font(.caption).foregroundStyle(.secondary)
-                    }
-                } header: {
-                    Text("VantageScore")
-                } footer: {
-                    Text("Track both your FICO and VantageScore (each 300–850). Lenders usually use FICO; many free apps show VantageScore. Leave one at 0 if you don't have it. A history graph and event correlations are coming next.")
-                }
-            }
-            .keyboardDoneButton()
-            .navigationTitle("Credit Scores")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) { Button("Save") { save() } }
-            }
-            .onAppear {
-                if let s = settingsList.first {
-                    fico = s.ficoScore
-                    vantage = s.vantageScore
-                }
-            }
-        }
-    }
-
-    private func save() {
-        if let s = settingsList.first {
-            s.ficoScore = fico > 0 ? min(max(fico, 300), 850) : 0
-            s.vantageScore = vantage > 0 ? min(max(vantage, 300), 850) : 0
-            try? context.save()
-        }
-        dismiss()
     }
 }
 
@@ -261,5 +197,5 @@ private struct InformalDebtsSheet: View {
 
 #Preview {
     NavigationStack { OverviewView() }
-        .modelContainer(for: [AppSettings.self, Paycheck.self, Bucket.self, RentObligation.self, LedgerEntry.self, WorkDay.self, CreditCard.self, RecurringTransaction.self, PersonalDebt.self], inMemory: true)
+        .modelContainer(for: [AppSettings.self, Paycheck.self, Bucket.self, RentObligation.self, LedgerEntry.self, WorkDay.self, CreditCard.self, RecurringTransaction.self, PersonalDebt.self, CreditScoreEntry.self], inMemory: true)
 }

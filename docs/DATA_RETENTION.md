@@ -24,4 +24,4 @@ data the user enters manually.
 - This policy is reviewed at least annually and whenever the data architecture changes.
 
 ## Contact
-Data requests: **[your-contact-email]**
+Data requests: **alexander.knue@gmail.com**

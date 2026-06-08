@@ -81,6 +81,7 @@ enum OverviewLogic {
         // Balances → net worth & debt.
         let checking = BalanceLogic.balance(asOf: now, anchorAmount: settings.currentCashBalance,
                                             anchorDate: settings.balanceAnchorDate, entries: ledger, calendar: calendar)
+        let savings = settings.savingsBalance
         let funds = buckets.reduce(0) { $0 + $1.currentAmount }
         let retireBalance = RetirementLogic.balance(settings: settings, workDays: workDays, asOf: now, calendar: calendar)
         let cardOwed = cards.reduce(0) { $0 + CardLogic.balance(for: $1, entries: ledger, recurrings: recurrings, asOf: now, calendar: calendar) }
@@ -89,7 +90,7 @@ enum OverviewLogic {
         let personalCounted = counted.reduce(0) { $0 + $1.amount }
         let informalTotal = nonForgiven.reduce(0) { $0 + $1.amount }
         let debtBalance = cardOwed + personalCounted
-        let netWorth = checking + funds + retireBalance - debtBalance
+        let netWorth = checking + savings + funds + retireBalance - debtBalance
 
         // Retirement: this period's contribution + match, scaled to a month.
         let period = settings.upcomingPayPeriod

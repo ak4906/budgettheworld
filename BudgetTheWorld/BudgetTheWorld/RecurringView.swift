@@ -79,6 +79,7 @@ private struct EditRecurringSheet: View {
     @State private var payWith: String? = nil
     @State private var hasEnd: Bool
     @State private var endDate: Date
+    @State private var skippedKeys: Set<String>
 
     init(item: RecurringTransaction?) {
         self.item = item
@@ -94,6 +95,7 @@ private struct EditRecurringSheet: View {
         let bounded = end.timeIntervalSinceNow < 100 * 365 * 86_400
         _hasEnd = State(initialValue: bounded)
         _endDate = State(initialValue: bounded ? end : .now)
+        _skippedKeys = State(initialValue: Set((item?.skippedDatesRaw ?? "").split(separator: ",").map(String.init)))
     }
 
     var body: some View {
@@ -131,6 +133,37 @@ private struct EditRecurringSheet: View {
                         }
                     }
                 }
+                Section {
+                    let dates = ProjectionEngine.upcomingOccurrenceDates(start: startDate, cadence: cadence, end: hasEnd ? endDate : .distantFuture, limit: 8)
+                    if dates.isEmpty {
+                        Text("No upcoming occurrences.").font(.caption).foregroundStyle(.secondary)
+                    } else {
+                        ForEach(dates, id: \.self) { d in
+                            let key = ProjectionEngine.skipKey(d)
+                            let skipped = skippedKeys.contains(key)
+                            Button {
+                                if skipped { skippedKeys.remove(key) } else { skippedKeys.insert(key) }
+                            } label: {
+                                HStack {
+                                    Text(d.formatted(.dateTime.weekday(.abbreviated).month().day().year()))
+                                        .strikethrough(skipped)
+                                        .foregroundStyle(skipped ? Color.secondary : Color.primary)
+                                    Spacer()
+                                    if skipped {
+                                        Text("Skipped").font(.caption).foregroundStyle(.orange)
+                                    } else {
+                                        Image(systemName: "checkmark.circle").foregroundStyle(.green)
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                } header: {
+                    Text("Upcoming occurrences")
+                } footer: {
+                    Text("Tap an occurrence to skip just that one (a week off, a paused month). Skipped dates are left out of forecasts and Free to Spend.")
+                }
                 if item != nil {
                     Section {
                         Toggle("Active", isOn: $isActive)
@@ -153,6 +186,7 @@ private struct EditRecurringSheet: View {
     private func save() {
         let signed = isIncome ? amount : -amount
         let cat = isIncome ? SpendCategory.income : category
+        let skips = skippedKeys.sorted().joined(separator: ",")
         if let item {
             item.detail = detail
             item.amount = signed
@@ -162,8 +196,11 @@ private struct EditRecurringSheet: View {
             item.isActive = isActive
             item.cardName = isIncome ? nil : payWith
             item.endDate = hasEnd ? endDate : .distantFuture
+            item.skippedDatesRaw = skips
         } else {
-            context.insert(RecurringTransaction(amount: signed, detail: detail, category: cat, cadence: cadence, startDate: startDate, endDate: hasEnd ? endDate : .distantFuture, cardName: isIncome ? nil : payWith))
+            let new = RecurringTransaction(amount: signed, detail: detail, category: cat, cadence: cadence, startDate: startDate, endDate: hasEnd ? endDate : .distantFuture, cardName: isIncome ? nil : payWith)
+            new.skippedDatesRaw = skips
+            context.insert(new)
         }
         try? context.save()
         dismiss()

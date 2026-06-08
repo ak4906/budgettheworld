@@ -14,6 +14,7 @@ struct WorkView: View {
     @Environment(\.modelContext) private var context
     @Query private var settingsList: [AppSettings]
     @Query(sort: \WorkDay.date, order: .reverse) private var overrides: [WorkDay]
+    @Query(sort: \LedgerEntry.date, order: .reverse) private var ledger: [LedgerEntry]
 
     @State private var editing: DayRef?
 
@@ -26,6 +27,7 @@ struct WorkView: View {
                     VStack(spacing: 16) {
                         standardDayCard(settings)
                         periodCard(settings)
+                        recentPaychecksCard()
                     }
                     .padding()
                 } else {
@@ -87,6 +89,46 @@ struct WorkView: View {
 
             ForEach(days, id: \.self) { day in
                 dayRow(day, settings: settings, calendar: cal, today: today)
+            }
+        }
+    }
+
+    // MARK: Recent paychecks (real synced deposits)
+
+    private func recentPaychecksCard() -> some View {
+        let pays = WorkLogic.recentPaychecks(from: ledger, limit: 8)
+        return Card(title: "Recent Paychecks", systemImage: "banknote", tint: .green) {
+            if pays.isEmpty {
+                Text("Once your bank syncs (or you set an income transaction's Source to “Paycheck”), your real paychecks show up here.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                let avg = pays.reduce(0) { $0 + $1.amount } / Double(pays.count)
+                Text("Avg \(avg.formatted(.currency(code: "USD"))) · last \(pays.count)")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Divider()
+                ForEach(pays) { p in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(p.date.formatted(.dateTime.month().day().year()))
+                            Text((p.subcategory?.isEmpty == false ? p.subcategory! : p.rawDescription))
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                        Spacer()
+                        Text(p.amount, format: .currency(code: "USD"))
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.green)
+                    }
+                    .font(.subheadline)
+                    .padding(.vertical, 3)
+                }
+                Text("Real deposits from your bank — your actual take-home. The projection above estimates your next check.")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .padding(.top, 2)
             }
         }
     }

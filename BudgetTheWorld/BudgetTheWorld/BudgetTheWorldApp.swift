@@ -22,7 +22,7 @@ struct BudgetTheWorldApp: App {
         )
         do {
             modelContainer = try ModelContainer(
-                for: AppSettings.self, Paycheck.self, Bucket.self, RentObligation.self, LedgerEntry.self, WorkDay.self, CreditCard.self, RecurringTransaction.self, PersonalDebt.self
+                for: AppSettings.self, Paycheck.self, Bucket.self, RentObligation.self, LedgerEntry.self, WorkDay.self, CreditCard.self, RecurringTransaction.self, PersonalDebt.self, LabelRule.self, CreditScoreEntry.self
             )
         } catch {
             fatalError("Could not create ModelContainer: \(error)")

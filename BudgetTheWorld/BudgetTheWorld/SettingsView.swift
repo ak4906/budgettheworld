@@ -2,9 +2,8 @@
 //  SettingsView.swift
 //  BudgetTheWorld
 //
-//  Make the seeded numbers real: wage, the standard schedule, cash balance, rent,
-//  and the take-home estimate. Plus Log-a-Paycheck, which teaches the app your true
-//  net/gross ratio so forecasts get sharper with every real deposit.
+//  Make the seeded numbers real: wage, the standard schedule, balances, rent, retirement.
+//  Organized as a short menu — each row opens a focused screen — so it stays scannable.
 //
 
 import SwiftUI
@@ -18,7 +17,7 @@ struct SettingsView: View {
         NavigationStack {
             Group {
                 if let settings = settingsList.first {
-                    SettingsForm(settings: settings, rent: rents.first)
+                    SettingsMenu(settings: settings, rent: rents.first)
                 } else {
                     ContentUnavailableView("Setting things up…", systemImage: "hourglass")
                 }
@@ -28,12 +27,59 @@ struct SettingsView: View {
     }
 }
 
-// MARK: - Form
+// MARK: - Top-level menu
 
-private struct SettingsForm: View {
+private struct SettingsMenu: View {
     @Bindable var settings: AppSettings
     let rent: RentObligation?
     @AppStorage("appLockEnabled") private var appLockEnabled = false
+
+    var body: some View {
+        Form {
+            Section("Money") {
+                NavigationLink { IncomePaySettings(settings: settings) } label: {
+                    Label("Income & Pay", systemImage: "dollarsign.circle.fill")
+                }
+                NavigationLink { WorkScheduleSettings(settings: settings) } label: {
+                    Label("Work Schedule", systemImage: "calendar.badge.clock")
+                }
+                NavigationLink { BalancesSettings(settings: settings, rent: rent) } label: {
+                    Label("Balances & Rent", systemImage: "banknote.fill")
+                }
+                NavigationLink { RetirementSettings(settings: settings) } label: {
+                    Label("Retirement / 401(k)", systemImage: "chart.line.uptrend.xyaxis")
+                }
+            }
+
+            Section("Accounts") {
+                NavigationLink { CreditCardsView() } label: {
+                    Label("Credit Cards", systemImage: "creditcard.fill")
+                }
+                NavigationLink { DebtsView() } label: {
+                    Label("Informal Debts", systemImage: "person.2.fill")
+                }
+                NavigationLink { BankSyncView() } label: {
+                    Label("Bank Sync (Plaid)", systemImage: "building.columns.fill")
+                }
+            }
+
+            Section {
+                Toggle(isOn: $appLockEnabled) {
+                    Label("Require Face ID / passcode", systemImage: "faceid")
+                }
+            } header: {
+                Text("Privacy & Security")
+            } footer: {
+                Text("Locks the app behind Face ID / Touch ID / your device passcode. Add a “Face ID” usage description in the Xcode target's Info settings or Face ID won't prompt.")
+            }
+        }
+    }
+}
+
+// MARK: - Income & Pay
+
+private struct IncomePaySettings: View {
+    @Bindable var settings: AppSettings
 
     var body: some View {
         Form {
@@ -48,14 +94,54 @@ private struct SettingsForm: View {
                 }
                 DatePicker("Pay period start", selection: $settings.periodAnchorStart, displayedComponents: .date)
                 Stepper("Payday: \(settings.payLagDays) days after period ends", value: $settings.payLagDays, in: 0...30)
-                DatePicker("Employment start", selection: $settings.employmentStartDate, displayedComponents: .date)
-                Toggle("Planned employment end", isOn: hasEmploymentEndBinding)
-                if hasEmploymentEndBinding.wrappedValue {
-                    DatePicker("Ends", selection: $settings.employmentEndDate, displayedComponents: .date)
-                }
                 LabeledContent("Next payday", value: settings.upcomingPayPeriod.payday.formatted(date: .abbreviated, time: .omitted))
             }
 
+            Section("Employment") {
+                DatePicker("Start date", selection: $settings.employmentStartDate, displayedComponents: .date)
+                Toggle("Planned end date", isOn: hasEmploymentEndBinding)
+                if hasEmploymentEndBinding.wrappedValue {
+                    DatePicker("Ends", selection: $settings.employmentEndDate, displayedComponents: .date)
+                }
+            }
+
+            Section {
+                Stepper("Estimate until paychecks: \(Int((settings.defaultNetRatio * 100).rounded()))%",
+                        value: percentBinding, in: 50...100, step: 1)
+                NavigationLink { PaychecksView() } label: {
+                    Label("Logged paychecks", systemImage: "banknote")
+                }
+            } header: {
+                Text("Take-home")
+            } footer: {
+                Text("Until you log real paychecks, this % estimates take-home from gross. Logging real net pay sharpens every forecast.")
+            }
+        }
+        .keyboardDoneButton()
+        .scrollDismissesKeyboard(.interactively)
+        .navigationTitle("Income & Pay")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var percentBinding: Binding<Int> {
+        Binding(get: { Int((settings.defaultNetRatio * 100).rounded()) },
+                set: { settings.defaultNetRatio = Double($0) / 100.0 })
+    }
+    private var hasEmploymentEndBinding: Binding<Bool> {
+        Binding(
+            get: { settings.employmentEndDate.timeIntervalSinceNow < 100 * 365 * 86_400 },
+            set: { on in settings.employmentEndDate = on ? (Calendar.current.date(byAdding: .year, value: 2, to: .now) ?? .now) : .distantFuture }
+        )
+    }
+}
+
+// MARK: - Work Schedule
+
+private struct WorkScheduleSettings: View {
+    @Bindable var settings: AppSettings
+
+    var body: some View {
+        Form {
             Section("Standard schedule") {
                 DatePicker("Start", selection: timeBinding(\.scheduledStartMinutes), displayedComponents: .hourAndMinute)
                 DatePicker("End", selection: timeBinding(\.scheduledEndMinutes), displayedComponents: .hourAndMinute)
@@ -70,68 +156,75 @@ private struct SettingsForm: View {
                 Stepper("Min lunch: \(settings.lunchMinMinutes) min", value: $settings.lunchMinMinutes, in: 0...120, step: 5)
                 Stepper("Max lunch: \(settings.lunchMaxMinutes) min", value: $settings.lunchMaxMinutes, in: 0...120, step: 5)
             }
+        }
+        .keyboardDoneButton()
+        .scrollDismissesKeyboard(.interactively)
+        .navigationTitle("Work Schedule")
+        .navigationBarTitleDisplayMode(.inline)
+    }
 
+    private var workTimeUnitBinding: Binding<WorkTimeUnit> {
+        Binding(get: { settings.workTimeUnit ?? .hours }, set: { settings.workTimeUnit = $0 })
+    }
+    /// Bridges a minutes-from-midnight Int property to a Date the picker can edit.
+    private func timeBinding(_ keyPath: ReferenceWritableKeyPath<AppSettings, Int>) -> Binding<Date> {
+        Binding(
+            get: {
+                let base = Calendar.current.startOfDay(for: .now)
+                return Calendar.current.date(byAdding: .minute, value: settings[keyPath: keyPath], to: base) ?? base
+            },
+            set: { newDate in
+                let c = Calendar.current.dateComponents([.hour, .minute], from: newDate)
+                settings[keyPath: keyPath] = (c.hour ?? 0) * 60 + (c.minute ?? 0)
+            }
+        )
+    }
+}
+
+// MARK: - Balances & Rent
+
+private struct BalancesSettings: View {
+    @Bindable var settings: AppSettings
+    let rent: RentObligation?
+
+    var body: some View {
+        Form {
             Section {
-                LabeledContent("Balance amount") {
+                LabeledContent("Checking balance") {
                     TextField("Balance", value: $settings.currentCashBalance, format: .currency(code: "USD"))
                         .keyboardType(.decimalPad)
                         .multilineTextAlignment(.trailing)
                 }
                 DatePicker("As of", selection: $settings.balanceAnchorDate, displayedComponents: .date)
+                LabeledContent("Savings balance") {
+                    TextField("Savings", value: $settings.savingsBalance, format: .currency(code: "USD"))
+                        .keyboardType(.decimalPad)
+                        .multilineTextAlignment(.trailing)
+                }
             } header: {
-                Text("Checking balance")
+                Text("Cash balances")
             } footer: {
-                Text("Transactions dated on or after this date add to or subtract from this balance.")
+                Text("Checking transactions dated on/after the “as of” date move the checking balance. Savings shows in Net Worth and auto-updates from bank sync.")
             }
 
             if let rent {
                 RentSection(rent: rent)
             }
+        }
+        .keyboardDoneButton()
+        .scrollDismissesKeyboard(.interactively)
+        .navigationTitle("Balances & Rent")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
 
-            Section("Credit Cards") {
-                NavigationLink {
-                    CreditCardsView()
-                } label: {
-                    Label("Manage cards", systemImage: "creditcard")
-                }
-            }
+// MARK: - Retirement
 
-            Section("Debts") {
-                NavigationLink {
-                    DebtsView()
-                } label: {
-                    Label("Informal debts", systemImage: "person.2.fill")
-                }
-            }
+private struct RetirementSettings: View {
+    @Bindable var settings: AppSettings
 
-            Section("Bank Sync") {
-                NavigationLink {
-                    BankSyncView()
-                } label: {
-                    Label("Connect & sync (Plaid)", systemImage: "building.columns")
-                }
-            }
-
-            Section {
-                Toggle(isOn: $appLockEnabled) {
-                    Label("Require Face ID / passcode", systemImage: "faceid")
-                }
-            } header: {
-                Text("Privacy & Security")
-            } footer: {
-                Text("Locks the app behind Face ID / Touch ID / your device passcode. Add a “Face ID” usage description in the Xcode target's Info settings or Face ID won't prompt.")
-            }
-
-            Section("Take-home") {
-                Stepper("Estimate until paychecks: \(Int((settings.defaultNetRatio * 100).rounded()))%",
-                        value: percentBinding, in: 50...100, step: 1)
-                NavigationLink {
-                    PaychecksView()
-                } label: {
-                    Label("Logged paychecks", systemImage: "banknote")
-                }
-            }
-
+    var body: some View {
+        Form {
             Section {
                 Stepper("Your contribution: \(Int((settings.retirementPercent * 100).rounded()))% of gross", value: retirementPercentBinding, in: 0...75)
                 Stepper("Employer match: up to \(Int((settings.employerMatchPercent * 100).rounded()))%", value: employerMatchBinding, in: 0...25)
@@ -154,29 +247,13 @@ private struct SettingsForm: View {
         }
         .keyboardDoneButton()
         .scrollDismissesKeyboard(.interactively)
-    }
-
-    private var percentBinding: Binding<Int> {
-        Binding(
-            get: { Int((settings.defaultNetRatio * 100).rounded()) },
-            set: { settings.defaultNetRatio = Double($0) / 100.0 }
-        )
+        .navigationTitle("Retirement")
+        .navigationBarTitleDisplayMode(.inline)
     }
 
     private var retirementPercentBinding: Binding<Int> {
-        Binding(
-            get: { Int((settings.retirementPercent * 100).rounded()) },
-            set: { settings.retirementPercent = Double($0) / 100.0 }
-        )
+        Binding(get: { Int((settings.retirementPercent * 100).rounded()) }, set: { settings.retirementPercent = Double($0) / 100.0 })
     }
-
-    private var workTimeUnitBinding: Binding<WorkTimeUnit> {
-        Binding(
-            get: { settings.workTimeUnit ?? .hours },
-            set: { settings.workTimeUnit = $0 }
-        )
-    }
-
     private var employerMatchBinding: Binding<Int> {
         Binding(get: { Int((settings.employerMatchPercent * 100).rounded()) }, set: { settings.employerMatchPercent = Double($0) / 100.0 })
     }
@@ -185,26 +262,6 @@ private struct SettingsForm: View {
     }
     private var annualCapBinding: Binding<Int> {
         Binding(get: { Int((settings.annualIncreaseCap * 100).rounded()) }, set: { settings.annualIncreaseCap = Double($0) / 100.0 })
-    }
-    private var hasEmploymentEndBinding: Binding<Bool> {
-        Binding(
-            get: { settings.employmentEndDate.timeIntervalSinceNow < 100 * 365 * 86_400 },
-            set: { on in settings.employmentEndDate = on ? (Calendar.current.date(byAdding: .year, value: 2, to: .now) ?? .now) : .distantFuture }
-        )
-    }
-
-    /// Bridges a minutes-from-midnight Int property to a Date the picker can edit.
-    private func timeBinding(_ keyPath: ReferenceWritableKeyPath<AppSettings, Int>) -> Binding<Date> {
-        Binding(
-            get: {
-                let base = Calendar.current.startOfDay(for: .now)
-                return Calendar.current.date(byAdding: .minute, value: settings[keyPath: keyPath], to: base) ?? base
-            },
-            set: { newDate in
-                let c = Calendar.current.dateComponents([.hour, .minute], from: newDate)
-                settings[keyPath: keyPath] = (c.hour ?? 0) * 60 + (c.minute ?? 0)
-            }
-        )
     }
 }
 

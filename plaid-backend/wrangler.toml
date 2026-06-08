@@ -6,11 +6,14 @@ compatibility_date = "2024-11-01"
 # Create it with:  npx wrangler kv namespace create BTW_KV
 # then paste the returned id below.
 kv_namespaces = [
-  { binding = "BTW_KV", id = "REPLACE_WITH_KV_ID" }
+  { binding = "BTW_KV", id = "a1c8bc2856e04f1d8a70da21c393c14a" }
 ]
 
 [vars]
-PLAID_ENV = "sandbox"   # switch to "production" for your real Bank of America account (Stage 2)
+PLAID_ENV = "production"   # switch to "production" for your real Bank of America account (Stage 2b)
+# Leave empty until you've registered this exact URL in the Plaid dashboard (Allowed redirect URIs).
+# Then set it to enable OAuth banks (BofA):
+PLAID_REDIRECT_URI = "https://budgettheworld-plaid.ak4906.workers.dev/plaid-oauth"
 
 # PLAID_CLIENT_ID, PLAID_SECRET, and APP_SECRET are NOT stored here — set them as secrets:
 #   npx wrangler secret put PLAID_CLIENT_ID

@@ -49,4 +49,4 @@ The app is not directed to children under 13 and does not knowingly collect thei
 This policy may be updated; the "Last updated" date will change accordingly.
 
 ## Contact
-Questions or data requests: **[your-contact-email]**
+Questions or data requests: **alexander.knue@gmail.com**
